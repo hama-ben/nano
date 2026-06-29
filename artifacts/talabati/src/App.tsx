@@ -18,6 +18,7 @@ import { ThemeProvider } from "@/lib/theme";
 import { I18nProvider } from "@/lib/i18n";
 import { usePushSubscription } from "@/hooks/use-push-subscription";
 import { useTokenRefresh } from "@/hooks/use-token-refresh";
+import { useSubscriptionNotifications } from "@/hooks/use-subscription-notifications";
 import { ErrorBoundary } from "@/components/error-boundary";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -51,6 +52,18 @@ function PushSubscriptionGate() {
   const userType = useAuth((s) => s.userType);
   // Only subscribe drivers — they are the ones receiving order push alerts
   usePushSubscription(userType === "سائق" ? userId : null);
+  return null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Subscription notification gate — listens for the `subscription_approved`
+// Socket.io event that the server emits ONLY to this driver's private room.
+// No other driver ever receives this event.
+// ─────────────────────────────────────────────────────────────────────────────
+function SubscriptionNotificationGate() {
+  const userId   = useAuth((s) => s.userId);
+  const userType = useAuth((s) => s.userType);
+  useSubscriptionNotifications(userType === "سائق" ? userId : null);
   return null;
 }
 
@@ -107,6 +120,7 @@ function App() {
               <SessionEvictionGuard />
               <TokenRefreshGate />
               <PushSubscriptionGate />
+              <SubscriptionNotificationGate />
               <ErrorBoundary>
                 <Router />
               </ErrorBoundary>

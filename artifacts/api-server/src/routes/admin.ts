@@ -274,12 +274,18 @@ router.post("/admin/payments/:paymentId/approve", async (req, res): Promise<void
     .set({ subscriptionExpiresAt: newExpiry })
     .where(eq(usersTable.id, payment.driverId));
 
-  // Targeted announcement
+  // Targeted announcement (persistent in-app record)
   await insertTargetedAnnouncement(
     payment.driverId,
     "تم قبول دفعتك ✅",
     `تم إضافة 30 يوم إلى حسابك. ينتهي اشتراكك في: ${newExpiry.toLocaleDateString("ar-DZ")}.`
   );
+
+  // Targeted Socket.io event — delivered ONLY to this driver's private room.
+  // No other driver receives this event.
+  emitToUser(payment.driverId, "subscription_approved", {
+    newExpiry: newExpiry.toISOString(),
+  });
 
   req.log.info({ paymentId, driverId: payment.driverId, newExpiry }, "Payment approved");
   res.json({
