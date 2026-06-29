@@ -205,6 +205,7 @@ router.get("/admin/payments", async (req, res): Promise<void> => {
       id:           subscriptionPaymentsTable.id,
       driverId:     subscriptionPaymentsTable.driverId,
       receiptImage: subscriptionPaymentsTable.receiptImage,
+      months:       subscriptionPaymentsTable.months,
       status:       subscriptionPaymentsTable.status,
       adminNotes:   subscriptionPaymentsTable.adminNotes,
       createdAt:    subscriptionPaymentsTable.createdAt,

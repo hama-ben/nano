@@ -11,7 +11,8 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import {
   HeadphonesIcon, Send, Loader2, RefreshCw, LogOut,
   MessageSquare, User, Phone, Clock, CheckCheck,
-  ChevronRight, Inbox, AlertCircle,
+  ChevronRight, Inbox, AlertCircle, Banknote, CalendarDays,
+  CheckCircle2, XCircle, Receipt, ExternalLink,
 } from "lucide-react";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -92,6 +93,301 @@ function formatFull(iso: string): string {
       day: "numeric", month: "long", hour: "2-digit", minute: "2-digit",
     });
   } catch { return ""; }
+}
+
+// ── Payment types ─────────────────────────────────────────────────────────────
+
+interface PaymentRow {
+  id:                   string;
+  driverId:             string;
+  receiptImage:         string;
+  months:               number;
+  status:               string;
+  adminNotes:           string | null;
+  createdAt:            string | null;
+  reviewedAt:           string | null;
+  driverName:           string | null;
+  driverPhone:          string | null;
+  driverWilaya:         string | null;
+  subscriptionExpiresAt: string | null;
+}
+
+// ── Payments Panel ────────────────────────────────────────────────────────────
+
+function PaymentsPanel({ adminKey }: { adminKey: string }) {
+  const [payments, setPayments]       = useState<PaymentRow[]>([]);
+  const [loading, setLoading]         = useState(true);
+  const [filter, setFilter]           = useState<"pending" | "approved" | "rejected" | "all">("pending");
+  const [actionId, setActionId]       = useState<string | null>(null);
+  const [rejectTarget, setRejectTarget] = useState<string | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
+  const [previewUrl, setPreviewUrl]   = useState<string | null>(null);
+  const [error, setError]             = useState("");
+
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
+    setError("");
+    try {
+      const rows = await adminFetch<PaymentRow[]>(`/api/admin/payments?status=${filter}`, adminKey);
+      setPayments(rows ?? []);
+    } catch (e: unknown) {
+      if (!silent) setError(e instanceof Error ? e.message : "تعذّر تحميل الوصولات");
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  }, [adminKey, filter]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleApprove = async (id: string) => {
+    setActionId(id);
+    try {
+      await adminFetch(`/api/admin/payments/${id}/approve`, adminKey, { method: "POST" });
+      load(true);
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : "خطأ في القبول");
+    } finally {
+      setActionId(null);
+    }
+  };
+
+  const handleReject = async () => {
+    if (!rejectTarget) return;
+    setActionId(rejectTarget);
+    try {
+      await adminFetch(`/api/admin/payments/${rejectTarget}/reject`, adminKey, {
+        method: "POST",
+        body: JSON.stringify({ reason: rejectReason.trim() || undefined }),
+      });
+      setRejectTarget(null);
+      setRejectReason("");
+      load(true);
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : "خطأ في الرفض");
+    } finally {
+      setActionId(null);
+    }
+  };
+
+  const monthsLabel = (m: number) =>
+    m === 1 ? "شهر واحد (30 يوم)" : `${m} أشهر (${m * 30} يوم)`;
+
+  const statusBadge = (s: string) => {
+    if (s === "approved") return <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">مقبول ✓</span>;
+    if (s === "rejected") return <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">مرفوض</span>;
+    return <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">قيد المراجعة</span>;
+  };
+
+  const pendingCount = filter === "pending" ? payments.length : 0;
+
+  return (
+    <div className="flex flex-col h-full overflow-hidden" dir="rtl">
+      {/* Header + filter tabs */}
+      <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800 shrink-0 bg-white dark:bg-slate-900 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Receipt className="w-4 h-4 text-primary" />
+            <span className="font-bold text-slate-800 dark:text-white text-sm">وصولات الدفع</span>
+            {pendingCount > 0 && (
+              <span className="bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">{pendingCount}</span>
+            )}
+          </div>
+          <button
+            onClick={() => load()}
+            disabled={loading}
+            className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500 hover:bg-slate-200 transition-colors"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+          </button>
+        </div>
+        <div className="flex gap-1.5 text-xs">
+          {(["pending", "approved", "rejected", "all"] as const).map((f) => (
+            <button
+              key={f}
+              onClick={() => setFilter(f)}
+              className={`px-3 py-1.5 rounded-xl font-bold transition-all ${
+                filter === f
+                  ? "bg-primary text-white shadow-sm"
+                  : "bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700"
+              }`}
+            >
+              {{ pending: "معلق", approved: "مقبول", rejected: "مرفوض", all: "الكل" }[f]}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {loading ? (
+          <div className="flex items-center justify-center py-16">
+            <Loader2 className="w-6 h-6 animate-spin text-primary" />
+          </div>
+        ) : error ? (
+          <div className="flex flex-col items-center gap-3 py-16 text-center">
+            <AlertCircle className="w-8 h-8 text-red-400" />
+            <p className="text-sm text-slate-500">{error}</p>
+            <button onClick={() => load()} className="text-xs text-primary font-bold flex items-center gap-1">
+              <RefreshCw className="w-3 h-3" /> إعادة المحاولة
+            </button>
+          </div>
+        ) : payments.length === 0 ? (
+          <div className="flex flex-col items-center gap-3 py-16 text-center">
+            <Banknote className="w-8 h-8 text-slate-300" />
+            <p className="text-sm text-slate-400">لا توجد وصولات</p>
+          </div>
+        ) : (
+          payments.map((p) => (
+            <div key={p.id} className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-sm">
+              {/* Driver info row */}
+              <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-100 dark:border-slate-800">
+                <div className="w-9 h-9 bg-primary/10 rounded-full flex items-center justify-center shrink-0">
+                  <User className="w-4 h-4 text-primary" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-bold text-slate-800 dark:text-white text-sm">{p.driverName ?? "—"}</span>
+                    {statusBadge(p.status)}
+                  </div>
+                  <div className="flex items-center gap-3 text-[11px] text-slate-400 mt-0.5 flex-wrap">
+                    {p.driverPhone && <span className="flex items-center gap-1"><Phone className="w-3 h-3" />{p.driverPhone}</span>}
+                    {p.driverWilaya && <span>{p.driverWilaya}</span>}
+                    {p.createdAt && <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{formatTime(p.createdAt)}</span>}
+                  </div>
+                </div>
+              </div>
+
+              {/* Duration + current expiry */}
+              <div className="px-4 py-3 bg-primary/5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-4 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <CalendarDays className="w-4 h-4 text-primary shrink-0" />
+                  <div>
+                    <p className="text-[10px] text-slate-400 font-medium">المدة المطلوبة</p>
+                    <p className="text-sm font-black text-primary">{monthsLabel(p.months ?? 1)}</p>
+                  </div>
+                </div>
+                <div className="text-left rtl:text-right">
+                  <p className="text-[10px] text-slate-400 font-medium">اشتراكه الحالي ينتهي</p>
+                  <p className="text-sm font-bold text-slate-700 dark:text-slate-200">
+                    {p.subscriptionExpiresAt
+                      ? new Date(p.subscriptionExpiresAt).toLocaleDateString("ar-DZ", { day: "numeric", month: "long", year: "numeric" })
+                      : "منتهي / غير مشترك"}
+                  </p>
+                </div>
+              </div>
+
+              {/* Receipt image preview */}
+              <div className="px-4 py-3 flex items-center gap-3 border-b border-slate-100 dark:border-slate-800">
+                <div
+                  className="w-16 h-16 rounded-xl overflow-hidden border-2 border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 cursor-pointer hover:border-primary transition-colors shrink-0"
+                  onClick={() => setPreviewUrl(p.receiptImage)}
+                >
+                  <img
+                    src={p.receiptImage}
+                    alt="وصل الدفع"
+                    className="w-full h-full object-cover"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                  />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs text-slate-500 mb-1">صورة الوصل — اضغط للتكبير</p>
+                  <button
+                    onClick={() => setPreviewUrl(p.receiptImage)}
+                    className="flex items-center gap-1.5 text-xs text-primary font-bold hover:underline"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" /> عرض الوصل
+                  </button>
+                </div>
+              </div>
+
+              {/* Admin notes (if rejected) */}
+              {p.adminNotes && (
+                <div className="px-4 py-2 bg-red-50 dark:bg-red-900/10 border-b border-slate-100 dark:border-slate-800">
+                  <p className="text-xs text-red-600 dark:text-red-400"><span className="font-bold">سبب الرفض:</span> {p.adminNotes}</p>
+                </div>
+              )}
+
+              {/* Actions */}
+              {p.status === "pending" && (
+                <div className="px-4 py-3 flex gap-2">
+                  <button
+                    onClick={() => handleApprove(p.id)}
+                    disabled={actionId === p.id}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-bold transition-all active:scale-[0.98] disabled:opacity-50"
+                  >
+                    {actionId === p.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                    قبول
+                  </button>
+                  <button
+                    onClick={() => { setRejectTarget(p.id); setRejectReason(""); }}
+                    disabled={actionId === p.id}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white text-sm font-bold transition-all active:scale-[0.98] disabled:opacity-50"
+                  >
+                    <XCircle className="w-4 h-4" />
+                    رفض
+                  </button>
+                </div>
+              )}
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Reject reason modal */}
+      {rejectTarget && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center p-4" onClick={() => setRejectTarget(null)}>
+          <div
+            className="bg-white dark:bg-slate-900 rounded-3xl p-6 w-full max-w-sm space-y-4 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+            dir="rtl"
+          >
+            <div className="flex items-center gap-2">
+              <XCircle className="w-5 h-5 text-red-500" />
+              <h3 className="font-black text-slate-800 dark:text-white">رفض الوصل</h3>
+            </div>
+            <p className="text-sm text-slate-500">يمكنك إضافة سبب الرفض ليُرسَل للسائق (اختياري).</p>
+            <textarea
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              placeholder="سبب الرفض (اختياري)..."
+              rows={3}
+              className="w-full border border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-3 text-sm resize-none outline-none focus:ring-2 focus:ring-red-400/40 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white"
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={handleReject}
+                disabled={!!actionId}
+                className="flex-1 py-3 rounded-2xl bg-red-500 hover:bg-red-600 text-white font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {actionId ? <Loader2 className="w-4 h-4 animate-spin" /> : "تأكيد الرفض"}
+              </button>
+              <button
+                onClick={() => setRejectTarget(null)}
+                className="flex-1 py-3 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold text-sm hover:bg-slate-200 transition-colors"
+              >
+                إلغاء
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Receipt full-screen preview */}
+      {previewUrl && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
+          onClick={() => setPreviewUrl(null)}
+        >
+          <img
+            src={previewUrl}
+            alt="وصل الدفع"
+            className="max-w-full max-h-full rounded-2xl shadow-2xl object-contain"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ── Admin Key Gate ────────────────────────────────────────────────────────────
@@ -471,6 +767,9 @@ function ThreadView({
 // ── Main Admin Panel ──────────────────────────────────────────────────────────
 
 function AdminPanel({ adminKey, onLogout }: { adminKey: string; onLogout: () => void }) {
+  const [tab, setTab] = useState<"support" | "payments">("support");
+
+  // Support-chat state
   const [threads, setThreads]       = useState<ThreadSummary[]>([]);
   const [listLoading, setListLoading] = useState(true);
   const [selectedThread, setSelectedThread] = useState<ThreadSummary | null>(null);
@@ -506,6 +805,8 @@ function AdminPanel({ adminKey, onLogout }: { adminKey: string; onLogout: () => 
     loadThreads(true);
   };
 
+  const unreadCount  = threads.filter((t) => t.pendingCount > 0).length;
+
   return (
     <div className="h-screen bg-slate-50 dark:bg-slate-950 flex flex-col" dir="rtl">
       {/* Top bar */}
@@ -514,12 +815,10 @@ function AdminPanel({ adminKey, onLogout }: { adminKey: string; onLogout: () => 
           <HeadphonesIcon className="w-4 h-4 text-white" />
         </div>
         <div className="flex-1">
-          <h1 className="text-sm font-black text-slate-800 dark:text-white">لوحة الدعم الفني — ميزو</h1>
+          <h1 className="text-sm font-black text-slate-800 dark:text-white">لوحة الإدارة — ميزو</h1>
           <p className="text-[10px] text-slate-400">
             {threads.length} محادثة ·{" "}
-            <span className="text-red-500 font-medium">
-              {threads.filter((t) => t.pendingCount > 0).length} تحتاج ردًا
-            </span>
+            <span className="text-red-500 font-medium">{unreadCount} تحتاج ردًا</span>
           </p>
         </div>
         <button
@@ -531,55 +830,92 @@ function AdminPanel({ adminKey, onLogout }: { adminKey: string; onLogout: () => 
         </button>
       </header>
 
-      {/* Body */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Thread list — always visible on desktop, conditional on mobile */}
-        <aside
-          className={`w-full lg:w-80 xl:w-96 border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col shrink-0 ${
-            mobileView === "thread" ? "hidden lg:flex" : "flex"
+      {/* Tab bar */}
+      <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 py-2 flex gap-2 shrink-0">
+        <button
+          onClick={() => setTab("support")}
+          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+            tab === "support"
+              ? "bg-primary text-white shadow-sm"
+              : "bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700"
           }`}
         >
-          {listLoading ? (
-            <div className="flex items-center justify-center flex-1">
-              <Loader2 className="w-5 h-5 animate-spin text-primary" />
-            </div>
-          ) : (
-            <ThreadList
-              threads={threads}
-              selectedId={selectedThread?.userId ?? null}
-              onSelect={handleSelect}
-              loading={listLoading}
-              onRefresh={() => loadThreads()}
-            />
+          <MessageSquare className="w-3.5 h-3.5" />
+          الدعم الفني
+          {unreadCount > 0 && (
+            <span className={`text-[9px] font-black px-1 py-0.5 rounded-full ${tab === "support" ? "bg-white/30 text-white" : "bg-red-500 text-white"}`}>
+              {unreadCount}
+            </span>
           )}
-        </aside>
-
-        {/* Thread view */}
-        <main
-          className={`flex-1 bg-white dark:bg-slate-900 flex flex-col overflow-hidden ${
-            mobileView === "list" ? "hidden lg:flex" : "flex"
+        </button>
+        <button
+          onClick={() => setTab("payments")}
+          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+            tab === "payments"
+              ? "bg-primary text-white shadow-sm"
+              : "bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700"
           }`}
         >
-          {selectedThread?.userId ? (
-            <ThreadView
-              key={selectedThread.userId}
-              userId={selectedThread.userId}
-              adminKey={adminKey}
-              onBack={handleBack}
-            />
-          ) : (
-            <div className="flex flex-col items-center justify-center h-full gap-4 text-center px-6">
-              <div className="w-16 h-16 bg-primary/10 rounded-3xl flex items-center justify-center">
-                <MessageSquare className="w-8 h-8 text-primary" />
-              </div>
-              <div>
-                <p className="font-bold text-slate-700 dark:text-slate-200 text-sm">اختر محادثة</p>
-                <p className="text-xs text-slate-400 mt-1">اختر محادثة من القائمة لعرض الرسائل والرد عليها</p>
-              </div>
-            </div>
-          )}
-        </main>
+          <Receipt className="w-3.5 h-3.5" />
+          وصولات الدفع
+        </button>
       </div>
+
+      {/* Body */}
+      {tab === "payments" ? (
+        <div className="flex-1 overflow-hidden">
+          <PaymentsPanel adminKey={adminKey} />
+        </div>
+      ) : (
+        <div className="flex-1 flex overflow-hidden">
+          {/* Thread list — always visible on desktop, conditional on mobile */}
+          <aside
+            className={`w-full lg:w-80 xl:w-96 border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col shrink-0 ${
+              mobileView === "thread" ? "hidden lg:flex" : "flex"
+            }`}
+          >
+            {listLoading ? (
+              <div className="flex items-center justify-center flex-1">
+                <Loader2 className="w-5 h-5 animate-spin text-primary" />
+              </div>
+            ) : (
+              <ThreadList
+                threads={threads}
+                selectedId={selectedThread?.userId ?? null}
+                onSelect={handleSelect}
+                loading={listLoading}
+                onRefresh={() => loadThreads()}
+              />
+            )}
+          </aside>
+
+          {/* Thread view */}
+          <main
+            className={`flex-1 bg-white dark:bg-slate-900 flex flex-col overflow-hidden ${
+              mobileView === "list" ? "hidden lg:flex" : "flex"
+            }`}
+          >
+            {selectedThread?.userId ? (
+              <ThreadView
+                key={selectedThread.userId}
+                userId={selectedThread.userId}
+                adminKey={adminKey}
+                onBack={handleBack}
+              />
+            ) : (
+              <div className="flex flex-col items-center justify-center h-full gap-4 text-center px-6">
+                <div className="w-16 h-16 bg-primary/10 rounded-3xl flex items-center justify-center">
+                  <MessageSquare className="w-8 h-8 text-primary" />
+                </div>
+                <div>
+                  <p className="font-bold text-slate-700 dark:text-slate-200 text-sm">اختر محادثة</p>
+                  <p className="text-xs text-slate-400 mt-1">اختر محادثة من القائمة لعرض الرسائل والرد عليها</p>
+                </div>
+              </div>
+            )}
+          </main>
+        </div>
+      )}
     </div>
   );
 }
