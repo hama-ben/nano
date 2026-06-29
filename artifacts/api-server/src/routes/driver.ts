@@ -401,9 +401,21 @@ router.post("/driver/:driverId/subscription", async (req, res): Promise<void> =>
     return;
   }
 
-  const months = typeof rawMonths === "number" && rawMonths >= 1 && rawMonths <= 12
-    ? Math.round(rawMonths)
+  // Accept months as a number OR numeric string (belt-and-suspenders).
+  // Falls back to 1 if absent, out of range, or non-numeric.
+  const parsedMonths = typeof rawMonths === "number"
+    ? rawMonths
+    : typeof rawMonths === "string"
+      ? parseFloat(rawMonths)
+      : NaN;
+  const months = Number.isFinite(parsedMonths) && parsedMonths >= 1 && parsedMonths <= 12
+    ? Math.round(parsedMonths)
     : 1;
+
+  req.log.info(
+    { driverId, receivedMonthsRaw: rawMonths, parsedMonths, monthsFinal: months },
+    "Subscription receipt — months parsed"
+  );
 
   const [user] = await db
     .select({ id: usersTable.id })
@@ -427,12 +439,16 @@ router.post("/driver/:driverId/subscription", async (req, res): Promise<void> =>
     .set({ subscriptionExpiresAt: bonusExpiresAt })
     .where(eq(usersTable.id, driverId));
 
-  req.log.info({ driverId, paymentId: payment.id, bonusExpiresAt }, "Subscription receipt submitted — 3-day bonus granted");
+  req.log.info(
+    { driverId, paymentId: payment.id, monthsSaved: payment.months, bonusExpiresAt },
+    "Subscription receipt submitted — 3-day bonus granted"
+  );
 
   res.status(201).json({
     id: payment.id,
     driverId: payment.driverId,
     receiptImage: payment.receiptImage,
+    months: payment.months,
     status: payment.status,
     adminNotes: payment.adminNotes ?? null,
     createdAt: payment.createdAt.toISOString(),

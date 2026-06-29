@@ -262,6 +262,11 @@ router.post("/admin/payments/:paymentId/approve", async (req, res): Promise<void
   const daysToAdd  = months * 30;
   const msToAdd    = daysToAdd * 24 * 60 * 60 * 1000;
 
+  req.log.info(
+    { paymentId, driverId: payment.driverId, monthsFromDB: payment.months, months, daysToAdd },
+    "Payment approval — duration resolved"
+  );
+
   // Cumulative / stacking expiry:
   //   • driver still active  → extend from their FUTURE expiry (no days lost)
   //   • driver expired / null → extend from NOW
