@@ -44,10 +44,29 @@ export function useSubscriptionNotifications(driverId: string | null): void {
       });
     }
 
+    function handlePaymentRejected() {
+      toast({
+        title: "تم رفض الوصل ❌",
+        description:
+          "عذراً، تم رفض وصل الدفع الخاص بك. يرجى التحقق من الوصل والمحاولة مرة أخرى.",
+        duration: 10000,
+        variant: "destructive",
+      });
+
+      queryClient.invalidateQueries({
+        queryKey: getGetDriverAccountQueryKey(driverId!),
+      });
+      queryClient.invalidateQueries({
+        queryKey: getGetDriverSubscriptionQueryKey(driverId!),
+      });
+    }
+
     socket.on("subscription_approved", handleSubscriptionApproved);
+    socket.on("payment_rejected", handlePaymentRejected);
 
     return () => {
       socket.off("subscription_approved", handleSubscriptionApproved);
+      socket.off("payment_rejected", handlePaymentRejected);
     };
   }, [driverId, toast, queryClient]);
 }

@@ -325,6 +325,12 @@ router.post("/admin/payments/:paymentId/reject", async (req, res): Promise<void>
     `${reason ?? "لم يتم قبول وصل الدفع."} للتواصل مع الإدارة: https://www.facebook.com/profile.php?id=61590856328769`
   );
 
+  // Targeted Socket.io event — delivered ONLY to this driver's private room.
+  // No other driver receives this event.
+  emitToUser(payment.driverId, "payment_rejected", {
+    reason: reason ?? null,
+  });
+
   req.log.info({ paymentId, driverId: payment.driverId }, "Payment rejected");
   res.json({ ok: true, paymentId, driverId: payment.driverId, status: "rejected" });
 });
