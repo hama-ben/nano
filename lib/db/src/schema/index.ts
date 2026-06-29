@@ -52,6 +52,7 @@ export const subscriptionPaymentsTable = pgTable("subscription_payments", {
   id: text("id").primaryKey().default(sql`gen_random_uuid()`),
   driverId: text("driver_id").notNull(),
   receiptImage: text("receipt_image").notNull(),
+  months: integer("months").notNull().default(1),
   status: text("status").notNull().default("pending"),
   adminNotes: text("admin_notes"),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),

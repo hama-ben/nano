@@ -240,6 +240,7 @@ router.post("/admin/payments/:paymentId/approve", async (req, res): Promise<void
       id:       subscriptionPaymentsTable.id,
       driverId: subscriptionPaymentsTable.driverId,
       status:   subscriptionPaymentsTable.status,
+      months:   subscriptionPaymentsTable.months,
     })
     .from(subscriptionPaymentsTable)
     .where(eq(subscriptionPaymentsTable.id, paymentId));
@@ -255,12 +256,19 @@ router.post("/admin/payments/:paymentId/approve", async (req, res): Promise<void
     .from(usersTable)
     .where(eq(usersTable.id, payment.driverId));
 
-  // Extend from the later of: current expiry or now
-  const now         = new Date();
-  const baseDate    = driver?.subscriptionExpiresAt && driver.subscriptionExpiresAt > now
+  // Dynamic duration: months stored on the payment record (default 1 → 30 days)
+  const months     = payment.months ?? 1;
+  const daysToAdd  = months * 30;
+  const msToAdd    = daysToAdd * 24 * 60 * 60 * 1000;
+
+  // Cumulative / stacking expiry:
+  //   • driver still active  → extend from their FUTURE expiry (no days lost)
+  //   • driver expired / null → extend from NOW
+  const now      = new Date();
+  const baseDate = driver?.subscriptionExpiresAt && driver.subscriptionExpiresAt > now
     ? driver.subscriptionExpiresAt
     : now;
-  const newExpiry   = new Date(baseDate.getTime() + 30 * 24 * 60 * 60 * 1000);
+  const newExpiry = new Date(baseDate.getTime() + msToAdd);
 
   // Mark payment as approved
   await db
@@ -278,20 +286,23 @@ router.post("/admin/payments/:paymentId/approve", async (req, res): Promise<void
   await insertTargetedAnnouncement(
     payment.driverId,
     "تم قبول دفعتك ✅",
-    `تم إضافة 30 يوم إلى حسابك. ينتهي اشتراكك في: ${newExpiry.toLocaleDateString("ar-DZ")}.`
+    `تم إضافة ${daysToAdd} يوم إلى حسابك. ينتهي اشتراكك في: ${newExpiry.toLocaleDateString("ar-DZ")}.`
   );
 
   // Targeted Socket.io event — delivered ONLY to this driver's private room.
   // No other driver receives this event.
   emitToUser(payment.driverId, "subscription_approved", {
     newExpiry: newExpiry.toISOString(),
+    daysAdded: daysToAdd,
   });
 
-  req.log.info({ paymentId, driverId: payment.driverId, newExpiry }, "Payment approved");
+  req.log.info({ paymentId, driverId: payment.driverId, months, daysToAdd, newExpiry }, "Payment approved");
   res.json({
     ok: true,
     paymentId,
     driverId: payment.driverId,
+    months,
+    daysAdded: daysToAdd,
     newSubscriptionExpiresAt: newExpiry.toISOString(),
   });
 });

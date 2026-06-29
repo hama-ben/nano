@@ -164,6 +164,9 @@ ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "first_approval_granted"  boolean N
 -- Support chat: two-way conversation between users and admin
 ALTER TABLE "support_messages" ADD COLUMN IF NOT EXISTS "sender_type" text NOT NULL DEFAULT 'user';
 ALTER TABLE "support_messages" ADD COLUMN IF NOT EXISTS "admin_id"    text;
+
+-- Subscription duration: how many months the driver paid for
+ALTER TABLE "subscription_payments" ADD COLUMN IF NOT EXISTS "months" integer NOT NULL DEFAULT 1;
 `;
 
 export async function runMigrations(): Promise<void> {

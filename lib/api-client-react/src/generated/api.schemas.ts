@@ -183,6 +183,8 @@ export interface SubscriptionPayment {
 
 export interface SubmitReceiptInput {
   receiptImage: string;
+  /** Number of months the driver paid for (1–4). Defaults to 1. */
+  months?: number;
 }
 
 export interface DriverDocsInput {

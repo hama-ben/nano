@@ -25,6 +25,7 @@ import {
   Banknote,
   Phone,
   Gift,
+  CalendarDays,
 } from "lucide-react";
 
 export default function SubscriptionPage() {
@@ -89,6 +90,7 @@ function SubscriptionContent({ driverId }: { driverId: string }) {
     }
   };
 
+  const [selectedMonths, setSelectedMonths] = useState(1);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -117,7 +119,7 @@ function SubscriptionContent({ driverId }: { driverId: string }) {
   const handleSubmit = () => {
     if (!imagePreview) return;
     submitMutation.mutate(
-      { driverId, data: { receiptImage: imagePreview } },
+      { driverId, data: { receiptImage: imagePreview, months: selectedMonths } },
       {
         onSuccess: () => {
           setImagePreview(null);
@@ -255,6 +257,42 @@ function SubscriptionContent({ driverId }: { driverId: string }) {
 
       {/* Latest payment status */}
       {payment && <PaymentStatusCard payment={payment} />}
+
+      {/* Months selector — only show when driver can submit a new receipt */}
+      {payment?.status !== "pending" && (
+        <div className="glass-panel rounded-3xl p-6 border border-primary/20 space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 bg-primary/10 rounded-2xl flex items-center justify-center">
+              <CalendarDays className="w-6 h-6 text-primary" />
+            </div>
+            <div>
+              <h2 className="font-bold text-slate-800 dark:text-white">اختر مدة الاشتراك</h2>
+              <p className="text-sm text-slate-500">حدد عدد الأشهر التي دفعت ثمنها</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-4 gap-2">
+            {([1, 2, 3, 4] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => setSelectedMonths(m)}
+                className={`flex flex-col items-center gap-1 py-3 rounded-2xl border-2 font-bold transition-all active:scale-[0.97] ${
+                  selectedMonths === m
+                    ? "border-primary bg-primary text-white shadow-lg shadow-primary/25"
+                    : "border-primary/20 bg-primary/5 text-slate-700 dark:text-slate-300 hover:border-primary/50"
+                }`}
+              >
+                <span className="text-base font-black">{m}</span>
+                <span className="text-xs opacity-80">{m === 1 ? "شهر" : "أشهر"}</span>
+                <span className="text-xs font-semibold opacity-70">{m * 1000} دج</span>
+              </button>
+            ))}
+          </div>
+          <div className="bg-primary/5 rounded-2xl p-3 flex items-center justify-between text-sm border border-primary/10">
+            <span className="text-slate-500">المبلغ الإجمالي المطلوب:</span>
+            <span className="font-black text-primary text-lg">{selectedMonths * 1000} دج</span>
+          </div>
+        </div>
+      )}
 
       {/* Upload form — hide if payment pending review */}
       {payment?.status === "pending" ? (

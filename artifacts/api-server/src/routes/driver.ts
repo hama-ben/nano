@@ -394,12 +394,16 @@ router.post("/driver/:driverId/subscription", async (req, res): Promise<void> =>
     ? req.params.driverId[0]
     : req.params.driverId;
 
-  const { receiptImage } = req.body as { receiptImage?: string };
+  const { receiptImage, months: rawMonths } = req.body as { receiptImage?: string; months?: unknown };
 
   if (!receiptImage || typeof receiptImage !== "string") {
     res.status(400).json({ error: "صورة الوصل مطلوبة" });
     return;
   }
+
+  const months = typeof rawMonths === "number" && rawMonths >= 1 && rawMonths <= 12
+    ? Math.round(rawMonths)
+    : 1;
 
   const [user] = await db
     .select({ id: usersTable.id })
@@ -413,7 +417,7 @@ router.post("/driver/:driverId/subscription", async (req, res): Promise<void> =>
 
   const [payment] = await db
     .insert(subscriptionPaymentsTable)
-    .values({ driverId, receiptImage, status: "pending" })
+    .values({ driverId, receiptImage, months, status: "pending" })
     .returning();
 
   // Grant 3 free days immediately as a bonus upon receipt upload
