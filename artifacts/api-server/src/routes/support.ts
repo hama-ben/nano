@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
-import { db } from "@workspace/db";
+import { db, usersTable } from "@workspace/db";
 import { supportMessagesTable } from "@workspace/db";
-import { sendSupportContactEmail } from "../lib/mailer";
+import { sendSupportContactEmail, sendAdminNewMessageNotification } from "../lib/mailer";
 import { eq, asc } from "drizzle-orm";
 
 // ── PUBLIC router (no auth required) ─────────────────────────────────────────
@@ -23,6 +23,17 @@ publicRouter.post("/support/message", async (req, res): Promise<void> => {
       senderType: "user",
     });
     req.log.info({ userId: userId ?? "anonymous" }, "✅ Support message saved");
+
+    // Soft-fail: notify admin without blocking the user response
+    sendAdminNewMessageNotification({
+      userName:  "زائر (غير مسجّل)",
+      userPhone: userId ?? "—",
+      userEmail: null,
+      userType:  "مستخدم مجهول",
+      message:   message.trim(),
+      sentAt:    new Date(),
+    }).catch((err) => req.log.warn({ err }, "Admin support notification failed (soft-fail)"));
+
     res.json({ message: "تم استلام رسالتك بنجاح" });
   } catch (err) {
     req.log.error({ err }, "support/message: DB insert failed");
@@ -104,6 +115,33 @@ protectedRouter.post("/support/thread/send", async (req, res): Promise<void> => 
       .returning();
 
     req.log.info({ userId }, "✅ User sent support thread message");
+
+    // Soft-fail: fetch sender info then notify admin — does NOT affect user response
+    db.select({
+      name:     usersTable.name,
+      phone:    usersTable.phone,
+      email:    usersTable.email,
+      userType: usersTable.userType,
+    })
+      .from(usersTable)
+      .where(eq(usersTable.id, userId))
+      .then(([user]) => {
+        const userName  = user?.name  ?? "مستخدم";
+        const userPhone = user?.phone ?? "—";
+        const userEmail = user?.email ?? null;
+        const userType  = user?.userType === "driver" ? "سائق" : "مستهلك";
+
+        return sendAdminNewMessageNotification({
+          userName,
+          userPhone,
+          userEmail,
+          userType,
+          message: message.trim(),
+          sentAt:  new Date(),
+        });
+      })
+      .catch((err) => req.log.warn({ err, userId }, "Admin support notification failed (soft-fail)"));
+
     res.json({ message: row });
   } catch (err) {
     req.log.error({ err }, "support/thread/send: DB insert failed");

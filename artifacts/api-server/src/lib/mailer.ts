@@ -175,3 +175,81 @@ export async function sendSupportContactEmail(params: {
 
   logger.info({ fromEmail: params.fromEmail, supportEmail }, "✅ Support contact email forwarded");
 }
+
+/**
+ * sendAdminNewMessageNotification
+ * Fired (soft-fail) whenever a driver submits a support thread message.
+ * Destination: ADMIN_EMAIL → SUPPORT_EMAIL → SMTP_USER (first set wins).
+ */
+export async function sendAdminNewMessageNotification(params: {
+  userName:  string;
+  userPhone: string;
+  userEmail: string | null;
+  userType:  string;
+  message:   string;
+  sentAt:    Date;
+}): Promise<void> {
+  const transporter  = getTransporter();
+  const adminEmail   =
+    process.env.ADMIN_EMAIL?.trim()   ??
+    process.env.SUPPORT_EMAIL?.trim() ??
+    process.env.SMTP_USER?.trim()     ??
+    "admin@mizu.app";
+
+  const dateStr = params.sentAt.toLocaleString("ar-DZ", { timeZone: "Africa/Algiers" });
+
+  if (!transporter) {
+    logger.warn(
+      { userName: params.userName },
+      "⚠️  SMTP not configured — admin support notification logged to console"
+    );
+    console.log(
+      `\n╔══════════════════════════════════════╗`,
+      `\n║  [SUPPORT ALERT] من: ${params.userName} (${params.userPhone})`,
+      `\n║  النوع: ${params.userType}`,
+      `\n║  الرسالة: ${params.message}`,
+      `\n║  التاريخ: ${dateStr}`,
+      `\n╚══════════════════════════════════════╝\n`
+    );
+    return;
+  }
+
+  const html = `
+    <div dir="rtl" style="font-family:sans-serif;max-width:620px;margin:auto;padding:32px;border:1px solid #e5e7eb;border-radius:16px;">
+      <h2 style="color:#0ea5e9;margin-bottom:4px;">📩 رسالة جديدة من خدمة العملاء</h2>
+      <p style="color:#6b7280;font-size:13px;margin-top:0;">تطبيق طلباتي — Talabati</p>
+      <table style="width:100%;border-collapse:collapse;margin:20px 0;">
+        <tr style="background:#f9fafb;">
+          <td style="padding:10px 12px;color:#6b7280;font-size:14px;border-radius:4px;">الاسم</td>
+          <td style="padding:10px 12px;font-weight:bold;color:#111827;">${params.userName}</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 12px;color:#6b7280;font-size:14px;">الهاتف</td>
+          <td style="padding:10px 12px;font-weight:bold;color:#111827;">${params.userPhone}</td>
+        </tr>
+        ${params.userEmail ? `<tr style="background:#f9fafb;"><td style="padding:10px 12px;color:#6b7280;font-size:14px;">البريد</td><td style="padding:10px 12px;font-weight:bold;color:#111827;">${params.userEmail}</td></tr>` : ""}
+        <tr${params.userEmail ? "" : ' style="background:#f9fafb;"'}>
+          <td style="padding:10px 12px;color:#6b7280;font-size:14px;">نوع الحساب</td>
+          <td style="padding:10px 12px;font-weight:bold;color:#111827;">${params.userType}</td>
+        </tr>
+        <tr style="background:#f9fafb;">
+          <td style="padding:10px 12px;color:#6b7280;font-size:14px;">التاريخ</td>
+          <td style="padding:10px 12px;font-weight:bold;color:#111827;">${dateStr}</td>
+        </tr>
+      </table>
+      <div style="background:#f0f9ff;border-right:4px solid #0ea5e9;padding:16px 20px;border-radius:8px;margin-bottom:20px;">
+        <p style="color:#0f172a;line-height:1.9;margin:0;white-space:pre-wrap;">${params.message}</p>
+      </div>
+      <p style="color:#9ca3af;font-size:12px;">يمكنك الرد من لوحة الأدمن. لا تردّ مباشرةً على هذا البريد.</p>
+    </div>`;
+
+  await transporter.sendMail({
+    from:    fromAddress(),
+    to:      adminEmail,
+    subject: `[طلباتي دعم] رسالة جديدة من ${params.userName} — ${params.userType}`,
+    html,
+    text: `رسالة جديدة من: ${params.userName} (${params.userPhone})\nالنوع: ${params.userType}\nالتاريخ: ${dateStr}\n\n${params.message}\n\n-- يمكنك الرد من لوحة الأدمن --`,
+  });
+
+  logger.info({ userName: params.userName, adminEmail }, "✅ Admin notified of new support message");
+}
