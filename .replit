@@ -27,3 +27,5 @@ SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 SUPABASE_SERVICE_ROLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFlb3l0ZXJ1dmN4cWltd3VzcmV5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MDQyMzc4NSwiZXhwIjoyMDk1OTk5Nzg1fQ.HO3XM8toqKFl1H1uyNrNhHPwurluTvLu2V7vo7fQS-8"
 SUPABASE_BD_URL = "postgresql://postgres.aeoyteruvcxqimwusrey:hama123hama@aws-0-eu-west-1.pooler.supabase.com:6543/postgres"
 SUPABASE_DB_URL = "postgresql://postgres.aeoyteruvcxqimwusrey:hama123hama@aws-0-eu-west-1.pooler.supabase.com:6543/postgres"
+ADMIN_EMAIL = "waterdrive213@gmail.com"
+SMTP_PASS = "ueozopodgygmaels"
