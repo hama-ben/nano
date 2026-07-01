@@ -418,7 +418,7 @@ router.post("/driver/:driverId/subscription", async (req, res): Promise<void> =>
   );
 
   const [user] = await db
-    .select({ id: usersTable.id })
+    .select({ id: usersTable.id, subscriptionExpiresAt: usersTable.subscriptionExpiresAt })
     .from(usersTable)
     .where(eq(usersTable.id, driverId));
 
@@ -432,16 +432,44 @@ router.post("/driver/:driverId/subscription", async (req, res): Promise<void> =>
     .values({ driverId, receiptImage, months, status: "pending" })
     .returning();
 
-  // Grant 3 free days immediately as a bonus upon receipt upload
-  const bonusExpiresAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
-  await db
-    .update(usersTable)
-    .set({ subscriptionExpiresAt: bonusExpiresAt })
-    .where(eq(usersTable.id, driverId));
+  // 3-day upload bonus — grace period while the receipt is under review.
+  // Rule: only extend if the driver has FEWER than 3 days remaining.
+  //   • remaining ≥ 3 days → do not touch subscriptionExpiresAt at all
+  //   • remaining < 3 days → bump to exactly now + 3 days
+  // This preserves any existing subscription balance so that:
+  //   - REJECT leaves whatever value was here completely intact
+  //   - APPROVE stacks on top of the true current balance, not an overwritten one
+  const now        = new Date();
+  const bonusMs    = 3 * 24 * 60 * 60 * 1000;
+  const currentExp = user.subscriptionExpiresAt;
+  const bonusExpiresAt = new Date(
+    Math.max(
+      currentExp && currentExp > now ? currentExp.getTime() : now.getTime(),
+      now.getTime() + bonusMs
+    )
+  );
+
+  const didExtend = !currentExp || currentExp <= now || currentExp.getTime() < now.getTime() + bonusMs;
+
+  if (didExtend) {
+    await db
+      .update(usersTable)
+      .set({ subscriptionExpiresAt: bonusExpiresAt })
+      .where(eq(usersTable.id, driverId));
+  }
 
   req.log.info(
-    { driverId, paymentId: payment.id, monthsSaved: payment.months, bonusExpiresAt },
-    "Subscription receipt submitted — 3-day bonus granted"
+    {
+      driverId,
+      paymentId:       payment.id,
+      monthsSaved:     payment.months,
+      previousExpiry:  currentExp?.toISOString() ?? null,
+      bonusExpiresAt:  bonusExpiresAt.toISOString(),
+      didExtend,
+    },
+    didExtend
+      ? "Subscription receipt submitted — 3-day bonus applied (driver had < 3 days)"
+      : "Subscription receipt submitted — bonus skipped (driver already has ≥ 3 days remaining)"
   );
 
   res.status(201).json({
