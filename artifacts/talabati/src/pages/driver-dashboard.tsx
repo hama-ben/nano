@@ -91,7 +91,7 @@ function RejectedAccountOverlay() {
   // Load existing appeal on mount
   useEffect(() => {
     if (!userId) return;
-    customFetch<{ status: string } | null>(`/driver/appeal`)
+    customFetch<{ status: string } | null>(`/api/driver/appeal`)
       .then((data) => {
         if (data) setExistingAppeal(data);
         setAppealStatus("idle");
@@ -104,7 +104,7 @@ function RejectedAccountOverlay() {
     setAppealError("");
     setAppealStatus("submitting");
     try {
-      await customFetch(`/driver/appeal`, {
+      await customFetch(`/api/driver/appeal`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: appealText.trim() }),
