@@ -394,6 +394,12 @@ router.post("/driver/:driverId/subscription", async (req, res): Promise<void> =>
     ? req.params.driverId[0]
     : req.params.driverId;
 
+  // IDOR guard: the authenticated user must be the driver named in the URL.
+  if (!req.auth?.userId || req.auth.userId !== driverId) {
+    res.status(403).json({ error: "غير مصرح لك بتقديم وصل لهذا الحساب" });
+    return;
+  }
+
   const { receiptImage, months: rawMonths } = req.body as { receiptImage?: string; months?: unknown };
 
   if (!receiptImage || typeof receiptImage !== "string") {

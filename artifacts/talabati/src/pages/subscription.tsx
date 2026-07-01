@@ -48,7 +48,7 @@ function SubscriptionContent({ driverId }: { driverId: string }) {
   const [, setLocation] = useLocation();
 
   const { data: account } = useGetDriverAccount(driverId, {
-    query: { queryKey: getGetDriverAccountQueryKey(driverId), retry: false },
+    query: { queryKey: getGetDriverAccountQueryKey(driverId), retry: false, refetchInterval: 5_000 },
   });
 
   const neverSubscribed = account !== undefined && account.subscriptionExpiresAt === null;
@@ -125,6 +125,9 @@ function SubscriptionContent({ driverId }: { driverId: string }) {
           setImagePreview(null);
           queryClient.invalidateQueries({
             queryKey: getGetDriverSubscriptionQueryKey(driverId),
+          });
+          queryClient.invalidateQueries({
+            queryKey: getGetDriverAccountQueryKey(driverId),
           });
         },
       }

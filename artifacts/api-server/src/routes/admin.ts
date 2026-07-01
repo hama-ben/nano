@@ -251,6 +251,16 @@ router.post("/admin/payments/:paymentId/approve", async (req, res): Promise<void
     return;
   }
 
+  // Idempotency guard: only pending payments can be approved.
+  // Approving an already-approved payment would double-stack subscription days.
+  if (payment.status !== "pending") {
+    res.status(409).json({
+      error: "لا يمكن الموافقة على هذا الدفع",
+      detail: `الحالة الحالية: ${payment.status}. يُسمح فقط بالموافقة على الدفعات المعلقة.`,
+    });
+    return;
+  }
+
   // Get the driver's current subscription expiry
   const [driver] = await db
     .select({ subscriptionExpiresAt: usersTable.subscriptionExpiresAt })
