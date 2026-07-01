@@ -1,4 +1,4 @@
-modules = ["nodejs-24"]
+modules = ["nodejs-20", "web", "java-graalvm22.3"]
 
 [deployment]
 router = "application"
@@ -29,3 +29,6 @@ SUPABASE_BD_URL = "postgresql://postgres.aeoyteruvcxqimwusrey:hama123hama@aws-0-
 SUPABASE_DB_URL = "postgresql://postgres.aeoyteruvcxqimwusrey:hama123hama@aws-0-eu-west-1.pooler.supabase.com:6543/postgres"
 ADMIN_EMAIL = "waterdrive213@gmail.com"
 SMTP_PASS = "ueozopodgygmaels"
+
+[nix]
+channel = "stable-25_05"
