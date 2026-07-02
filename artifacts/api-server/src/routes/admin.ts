@@ -107,9 +107,10 @@ router.post("/admin/drivers/:driverId/approve", async (req, res): Promise<void> 
 
   const [user] = await db
     .select({
-      id:                   usersTable.id,
-      accountStatus:        usersTable.accountStatus,
-      firstApprovalGranted: usersTable.firstApprovalGranted,
+      id:                    usersTable.id,
+      accountStatus:         usersTable.accountStatus,
+      firstApprovalGranted:  usersTable.firstApprovalGranted,
+      subscriptionExpiresAt: usersTable.subscriptionExpiresAt,
     })
     .from(usersTable)
     .where(eq(usersTable.id, driverId));
@@ -125,19 +126,58 @@ router.post("/admin/drivers/:driverId/approve", async (req, res): Promise<void> 
   const giftDays = 32;
   const giftExpiry = new Date(now.getTime() + giftDays * 24 * 60 * 60 * 1000);
 
-  await db
+  if (isFirstApproval) {
+    req.log.info(
+      {
+        endpoint: "POST /admin/drivers/:driverId/approve",
+        driverId,
+        before:   user.subscriptionExpiresAt?.toISOString() ?? null,
+        giftDays,
+        utcNow:   now.toISOString(),
+      },
+      "[SUBSCRIPTION WRITE PRE] first-approval doc gift"
+    );
+  }
+
+  // WHERE clause includes first_approval_granted = false for first-approval branch:
+  // this closes the TOCTOU window — a concurrent approval that already committed will
+  // have flipped the flag to true, causing 0 rows to match and preventing a double-gift.
+  const [updated] = await db
     .update(usersTable)
     .set({
       accountStatus: "approved",
-      // First-time approval: overwrite subscription with a fresh 30-day gift
       ...(isFirstApproval
         ? { subscriptionExpiresAt: giftExpiry, firstApprovalGranted: true }
         : {}
       ),
     })
-    .where(eq(usersTable.id, driverId));
+    .where(
+      isFirstApproval
+        ? and(eq(usersTable.id, driverId), eq(usersTable.firstApprovalGranted, false))
+        : eq(usersTable.id, driverId)
+    )
+    .returning({ subscriptionExpiresAt: usersTable.subscriptionExpiresAt });
 
   if (isFirstApproval) {
+    if (!updated) {
+      // Concurrent approval already committed — idempotent, respond with current state.
+      req.log.warn({ driverId }, "First-approval concurrent race detected — no-op");
+      res.json({ ok: true, driverId, accountStatus: "approved", giftGranted: false, raceSkipped: true });
+      return;
+    }
+
+    req.log.info(
+      {
+        endpoint: "POST /admin/drivers/:driverId/approve",
+        driverId,
+        before:   user.subscriptionExpiresAt?.toISOString() ?? null,
+        after:    updated.subscriptionExpiresAt?.toISOString() ?? null,
+        giftDays,
+        utcNow:   new Date().toISOString(),
+      },
+      "[SUBSCRIPTION WRITE POST] first-approval doc gift"
+    );
+
     await insertTargetedAnnouncement(
       driverId,
       "🎉 تم قبولك بيننا",
