@@ -121,8 +121,9 @@ router.post("/admin/drivers/:driverId/approve", async (req, res): Promise<void> 
 
   const isFirstApproval = !user.firstApprovalGranted;
   const now = new Date();
-  const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
-  const giftExpiry = new Date(now.getTime() + thirtyDaysMs);
+  // First approval = 32 days (30 base + 2 bonus welcome days); re-approvals get no gift.
+  const giftDays = 32;
+  const giftExpiry = new Date(now.getTime() + giftDays * 24 * 60 * 60 * 1000);
 
   await db
     .update(usersTable)
@@ -140,9 +141,9 @@ router.post("/admin/drivers/:driverId/approve", async (req, res): Promise<void> 
     await insertTargetedAnnouncement(
       driverId,
       "🎉 تم قبولك بيننا",
-      "تهانينا! حصلت على هدية 30 يوماً مجاناً كمستخدم جديد. مرحباً بك في عائلة ميزو!"
+      "تهانينا! حصلت على هدية 32 يوماً مجاناً كمستخدم جديد. مرحباً بك في عائلة ميزو!"
     );
-    req.log.info({ driverId, giftExpiry }, "Driver approved (first time) — 30-day gift granted");
+    req.log.info({ driverId, giftExpiry, giftDays }, "Driver approved (first time) — 32-day gift granted");
   } else {
     await insertTargetedAnnouncement(
       driverId,
