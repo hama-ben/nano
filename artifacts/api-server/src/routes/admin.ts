@@ -261,42 +261,68 @@ router.post("/admin/payments/:paymentId/approve", async (req, res): Promise<void
     return;
   }
 
-  // Get the driver's current subscription expiry
-  const [driver] = await db
-    .select({ subscriptionExpiresAt: usersTable.subscriptionExpiresAt })
-    .from(usersTable)
-    .where(eq(usersTable.id, payment.driverId));
-
   // Dynamic duration: months stored on the payment record (default 1 → 30 days)
-  const months     = payment.months ?? 1;
-  const daysToAdd  = months * 30;
-  const msToAdd    = daysToAdd * 24 * 60 * 60 * 1000;
+  const months    = payment.months ?? 1;
+  const daysToAdd = months * 30;
 
   req.log.info(
     { paymentId, driverId: payment.driverId, monthsFromDB: payment.months, months, daysToAdd },
     "Payment approval — duration resolved"
   );
 
-  // Cumulative / stacking expiry:
-  //   • driver still active  → extend from their FUTURE expiry (no days lost)
-  //   • driver expired / null → extend from NOW
-  const now      = new Date();
-  const baseDate = driver?.subscriptionExpiresAt && driver.subscriptionExpiresAt > now
-    ? driver.subscriptionExpiresAt
-    : now;
-  const newExpiry = new Date(baseDate.getTime() + msToAdd);
+  const now = new Date();
 
-  // Mark payment as approved
-  await db
-    .update(subscriptionPaymentsTable)
-    .set({ status: "approved", reviewedAt: now })
-    .where(eq(subscriptionPaymentsTable.id, paymentId));
+  // Single transaction wrapping both writes:
+  //   1. Payment status update uses WHERE status = 'pending' (conditional) to close
+  //      the TOCTOU window between the earlier status pre-check and this write.
+  //      If a concurrent approval already committed, 0 rows match and we return null.
+  //   2. Subscription extension is a single atomic SQL statement — no separate SELECT —
+  //      so PostgreSQL row-level locking prevents lost-updates even under concurrency.
+  //   If the driver row is missing, the transaction throws and rolls back step 1 too,
+  //   preventing an "approved" payment with no matching subscription extension.
+  const txResult = await db.transaction(async (tx) => {
+    const [markedPayment] = await tx
+      .update(subscriptionPaymentsTable)
+      .set({ status: "approved", reviewedAt: now })
+      .where(and(
+        eq(subscriptionPaymentsTable.id, paymentId),
+        eq(subscriptionPaymentsTable.status, "pending"),
+      ))
+      .returning({ id: subscriptionPaymentsTable.id });
 
-  // Extend subscription
-  await db
-    .update(usersTable)
-    .set({ subscriptionExpiresAt: newExpiry })
-    .where(eq(usersTable.id, payment.driverId));
+    if (!markedPayment) {
+      // Another concurrent approval already committed — signal 409 to caller.
+      return null;
+    }
+
+    // GREATEST(COALESCE(subscription_expires_at, NOW()), NOW()) means:
+    //   • driver still active  → stack from future expiry (no days lost)
+    //   • driver expired / null → stack from NOW
+    const [updated] = await tx
+      .update(usersTable)
+      .set({
+        subscriptionExpiresAt: sql`GREATEST(COALESCE(${usersTable.subscriptionExpiresAt}, NOW()), NOW()) + (${daysToAdd} * INTERVAL '1 day')`,
+      })
+      .where(eq(usersTable.id, payment.driverId))
+      .returning({ subscriptionExpiresAt: usersTable.subscriptionExpiresAt });
+
+    if (!updated?.subscriptionExpiresAt) {
+      // Driver row missing — throw to roll back the payment status update too.
+      throw new Error("driver_not_found");
+    }
+
+    return updated.subscriptionExpiresAt;
+  });
+
+  if (txResult === null) {
+    res.status(409).json({
+      error: "لا يمكن الموافقة على هذا الدفع",
+      detail: "تمت معالجة هذه الدفعة مسبقاً.",
+    });
+    return;
+  }
+
+  const newExpiry = txResult;
 
   // Targeted announcement (persistent in-app record)
   await insertTargetedAnnouncement(
