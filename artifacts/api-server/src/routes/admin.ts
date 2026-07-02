@@ -295,6 +295,26 @@ router.post("/admin/payments/:paymentId/approve", async (req, res): Promise<void
       return null;
     }
 
+    // Read the current value for audit logging only — the UPDATE below is atomic
+    // and does not use this variable in its computation.
+    const [beforeRow] = await tx
+      .select({ subscriptionExpiresAt: usersTable.subscriptionExpiresAt })
+      .from(usersTable)
+      .where(eq(usersTable.id, payment.driverId));
+    const beforeApprove = beforeRow?.subscriptionExpiresAt ?? null;
+
+    req.log.info(
+      {
+        endpoint:  "POST /admin/payments/:paymentId/approve",
+        driverId:  payment.driverId,
+        paymentId,
+        before:    beforeApprove?.toISOString() ?? null,
+        daysToAdd,
+        utcNow:    new Date().toISOString(),
+      },
+      "[SUBSCRIPTION WRITE PRE] approve"
+    );
+
     // GREATEST(COALESCE(subscription_expires_at, NOW()), NOW()) means:
     //   • driver still active  → stack from future expiry (no days lost)
     //   • driver expired / null → stack from NOW
@@ -310,6 +330,19 @@ router.post("/admin/payments/:paymentId/approve", async (req, res): Promise<void
       // Driver row missing — throw to roll back the payment status update too.
       throw new Error("driver_not_found");
     }
+
+    req.log.info(
+      {
+        endpoint:  "POST /admin/payments/:paymentId/approve",
+        driverId:  payment.driverId,
+        paymentId,
+        before:    beforeApprove?.toISOString() ?? null,
+        after:     updated.subscriptionExpiresAt.toISOString(),
+        daysAdded: daysToAdd,
+        utcNow:    new Date().toISOString(),
+      },
+      "[SUBSCRIPTION WRITE POST] approve"
+    );
 
     return updated.subscriptionExpiresAt;
   });
