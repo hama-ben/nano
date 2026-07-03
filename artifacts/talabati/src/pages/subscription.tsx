@@ -265,7 +265,17 @@ function SubscriptionContent({ driverId }: { driverId: string }) {
       {/* Latest payment status */}
       {payment && <PaymentStatusCard payment={payment} />}
 
-      {/* Upload form — hide if payment pending review */}
+      {/*
+        Upload form visibility — must hide whenever the driver has a
+        payment that's already "pending" review OR "approved" while the
+        subscription it granted is still active. Only "rejected" (or no
+        payment at all / a genuinely expired subscription) should surface
+        the upload form again. Previously this only checked for
+        "pending", so an "approved" payment fell through to the `else`
+        branch and rendered the upload form directly underneath the
+        "تم القبول ✓" success card — inviting an immediate re-upload that
+        re-triggered the 3-day grace bonus and wiped out the real balance.
+      */}
       {payment?.status === "pending" ? (
         <div className="glass-panel rounded-3xl p-6 text-center border border-amber-200 dark:border-amber-700 space-y-3">
           <Clock className="w-10 h-10 text-amber-500 mx-auto" />
@@ -280,7 +290,7 @@ function SubscriptionContent({ driverId }: { driverId: string }) {
             </p>
           </div>
         </div>
-      ) : (
+      ) : payment?.status === "approved" && account?.subscriptionExpired === false ? null : (
         <UploadReceiptForm
           imagePreview={imagePreview}
           dragOver={dragOver}

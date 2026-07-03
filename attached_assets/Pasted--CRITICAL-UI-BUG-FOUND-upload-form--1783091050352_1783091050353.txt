@@ -1,0 +1,56 @@
+═══════════════════════════════════════════════════════════════
+CRITICAL UI BUG FOUND — upload form reappears AFTER approval
+═══════════════════════════════════════════════════════════════
+Screenshot evidence: after a payment is approved (the screen clearly
+shows "تم القبول ✓ — تم قبول وصلك وتحديد اشتراكك بنجاح"), the SAME
+screen still displays an active "رفع صورة الوصل" (upload receipt
+image) box below it, fully clickable, inviting the driver to upload
+ANOTHER receipt image immediately.
+
+This is very likely the root cause of today's entire "periodic reset
+to NOW()+3days" mystery: if the upload form doesn't properly hide/
+disable itself once a payment is approved (or once any payment is
+already pending/approved), a driver — or repeated testing — could
+re-upload a new receipt right after approval, which re-triggers the
+3-day upload bonus grant, resetting subscription_expires_at down
+from the real future date to NOW()+3days. This matches exactly the
+pattern we saw in server logs all day (PRE-UPDATE always showing
+~NOW()+3days, regardless of prior approvals).
+
+═══════════════════════════════════════════════════════════════
+STEP 1 — DIAGNOSE
+═══════════════════════════════════════════════════════════════
+1. Show me the exact component/page rendering this subscription
+   status screen (likely subscription.tsx or similar) — specifically
+   the conditional logic that decides whether to show the "رفع صورة
+   الوصل" upload box.
+
+2. What condition currently controls whether the upload form is
+   shown vs hidden? Is it checking the LATEST payment's status
+   correctly (should hide if status is "pending" OR "approved" with
+   subscription still active), or is there a stale/incorrect
+   condition (e.g., checking a cached value, or only checking for
+   "pending" status but not accounting for a freshly-approved
+   payment still being displayed on screen before the UI transitions)?
+
+3. Is it possible for the upload form and the "تم القبول" success
+   message to be rendered SIMULTANEOUSLY due to a race between the
+   real-time approval notification updating one piece of state while
+   another piece of state (controlling the upload form's visibility)
+   hasn't caught up yet?
+
+═══════════════════════════════════════════════════════════════
+STEP 2 — FIX
+═══════════════════════════════════════════════════════════════
+Ensure the upload form is ONLY shown when the driver has NO pending
+AND NO recently-approved-but-not-yet-refreshed payment — i.e., hide
+it whenever the driver's most recent payment status is "pending" OR
+"approved", and only show it again once the subscription is
+genuinely close to expiring (or there's truly no active/pending
+payment). Also add a safeguard: even if the form is mistakenly shown,
+the backend upload endpoint itself should reject a new submission if
+the driver already has a pending payment (defense in depth on top of
+the UI fix).
+
+Show me the diff, then confirm this screen no longer shows both the
+"تم القبول" success state and an active upload form at the same time.

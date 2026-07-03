@@ -467,6 +467,36 @@ router.post(
       return;
     }
 
+    // Defense-in-depth: reject a new receipt submission if the driver
+    // already has a payment that's "pending" review, or an "approved"
+    // payment whose subscription is still active. This backs up the
+    // frontend's upload-form visibility guard — even if the UI mistakenly
+    // shows the form (or a stale client resubmits), the backend must not
+    // let a second receipt re-trigger the 3-day grace bonus and wipe out
+    // an already-active subscription balance.
+    const [latestPayment] = await db
+      .select({ status: subscriptionPaymentsTable.status })
+      .from(subscriptionPaymentsTable)
+      .where(eq(subscriptionPaymentsTable.driverId, driverId))
+      .orderBy(desc(subscriptionPaymentsTable.createdAt))
+      .limit(1);
+
+    const guardCheckNow = new Date();
+    const subscriptionStillActive =
+      user.subscriptionExpiresAt !== null &&
+      user.subscriptionExpiresAt !== undefined &&
+      user.subscriptionExpiresAt > guardCheckNow;
+
+    if (
+      latestPayment?.status === "pending" ||
+      (latestPayment?.status === "approved" && subscriptionStillActive)
+    ) {
+      res.status(409).json({
+        error: "لديك اشتراك نشط أو وصل قيد المراجعة بالفعل. لا يمكن رفع وصل جديد الآن.",
+      });
+      return;
+    }
+
     const [payment] = await db
       .insert(subscriptionPaymentsTable)
       .values({ driverId, receiptImage, status: "pending" })
