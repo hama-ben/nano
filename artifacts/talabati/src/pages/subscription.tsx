@@ -90,6 +90,7 @@ function SubscriptionContent({ driverId }: { driverId: string }) {
     }
   };
 
+  const [selectedMonths, setSelectedMonths] = useState(1);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -118,7 +119,7 @@ function SubscriptionContent({ driverId }: { driverId: string }) {
   const handleSubmit = () => {
     if (!imagePreview) return;
     submitMutation.mutate(
-      { driverId, data: { receiptImage: imagePreview, months: 1 } },
+      { driverId, data: { receiptImage: imagePreview, months: selectedMonths } },
       {
         onSuccess: () => {
           setImagePreview(null);
@@ -160,11 +161,6 @@ function SubscriptionContent({ driverId }: { driverId: string }) {
           <p className="text-sm text-slate-500">{t("subscription.subtitle")}</p>
         </div>
       </div>
-
-      {/* Current status — sourced directly from the database (account.subscriptionExpiresAt), never from local form state */}
-      {!neverSubscribed && account && (
-        <CurrentSubscriptionStatus expiresAt={account.subscriptionExpiresAt} />
-      )}
 
       {/* Free Trial card — only for first-time drivers */}
       {neverSubscribed && (
@@ -265,17 +261,43 @@ function SubscriptionContent({ driverId }: { driverId: string }) {
       {/* Latest payment status */}
       {payment && <PaymentStatusCard payment={payment} />}
 
-      {/*
-        Upload form visibility — must hide whenever the driver has a
-        payment that's already "pending" review OR "approved" while the
-        subscription it granted is still active. Only "rejected" (or no
-        payment at all / a genuinely expired subscription) should surface
-        the upload form again. Previously this only checked for
-        "pending", so an "approved" payment fell through to the `else`
-        branch and rendered the upload form directly underneath the
-        "تم القبول ✓" success card — inviting an immediate re-upload that
-        re-triggered the 3-day grace bonus and wiped out the real balance.
-      */}
+      {/* Months selector — only show when driver can submit a new receipt */}
+      {payment?.status !== "pending" && (
+        <div className="glass-panel rounded-3xl p-6 border border-primary/20 space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 bg-primary/10 rounded-2xl flex items-center justify-center">
+              <CalendarDays className="w-6 h-6 text-primary" />
+            </div>
+            <div>
+              <h2 className="font-bold text-slate-800 dark:text-white">اختر مدة الاشتراك</h2>
+              <p className="text-sm text-slate-500">حدد عدد الأشهر التي دفعت ثمنها</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-4 gap-2">
+            {([1, 2, 3, 4] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => setSelectedMonths(m)}
+                className={`flex flex-col items-center gap-1 py-3 rounded-2xl border-2 font-bold transition-all active:scale-[0.97] ${
+                  selectedMonths === m
+                    ? "border-primary bg-primary text-white shadow-lg shadow-primary/25"
+                    : "border-primary/20 bg-primary/5 text-slate-700 dark:text-slate-300 hover:border-primary/50"
+                }`}
+              >
+                <span className="text-base font-black">{m}</span>
+                <span className="text-xs opacity-80">{m === 1 ? "شهر" : "أشهر"}</span>
+                <span className="text-xs font-semibold opacity-70">{m * 1000} دج</span>
+              </button>
+            ))}
+          </div>
+          <div className="bg-primary/5 rounded-2xl p-3 flex items-center justify-between text-sm border border-primary/10">
+            <span className="text-slate-500">المبلغ الإجمالي المطلوب:</span>
+            <span className="font-black text-primary text-lg">{selectedMonths * 1000} دج</span>
+          </div>
+        </div>
+      )}
+
+      {/* Upload form — hide if payment pending review */}
       {payment?.status === "pending" ? (
         <div className="glass-panel rounded-3xl p-6 text-center border border-amber-200 dark:border-amber-700 space-y-3">
           <Clock className="w-10 h-10 text-amber-500 mx-auto" />
@@ -290,7 +312,7 @@ function SubscriptionContent({ driverId }: { driverId: string }) {
             </p>
           </div>
         </div>
-      ) : payment?.status === "approved" && account?.subscriptionExpired === false ? null : (
+      ) : (
         <UploadReceiptForm
           imagePreview={imagePreview}
           dragOver={dragOver}
@@ -358,41 +380,6 @@ function PaymentStatusCard({ payment }: { payment: { status: string; adminNotes?
           <p className="text-sm text-slate-700 dark:text-slate-200">{payment.adminNotes}</p>
         </div>
       )}
-    </div>
-  );
-}
-
-// ─── Current subscription status — real DB data only, no form state ──────────
-function CurrentSubscriptionStatus({ expiresAt }: { expiresAt: string | null | undefined }) {
-  const isActive = !!expiresAt && new Date(expiresAt).getTime() > Date.now();
-
-  const formattedDate = expiresAt
-    ? new Date(expiresAt).toLocaleDateString("ar-DZ", { year: "numeric", month: "long", day: "numeric" })
-    : null;
-
-  return (
-    <div
-      className={`glass-panel rounded-3xl p-5 border-2 flex items-center gap-3 ${
-        isActive
-          ? "border-emerald-400 bg-emerald-50/30 dark:bg-emerald-900/10"
-          : "border-red-300 bg-red-50/30 dark:bg-red-900/10"
-      }`}
-    >
-      <div
-        className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${
-          isActive ? "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600" : "bg-red-100 dark:bg-red-900/30 text-red-500"
-        }`}
-      >
-        {isActive ? <CalendarDays className="w-6 h-6" /> : <XCircle className="w-6 h-6" />}
-      </div>
-      <div>
-        <p className={`font-bold ${isActive ? "text-emerald-700 dark:text-emerald-300" : "text-red-700 dark:text-red-300"}`}>
-          {isActive ? "الاشتراك نشط" : "انتهى الاشتراك"}
-        </p>
-        <p className="text-sm text-slate-500">
-          {isActive ? `نشط حتى: ${formattedDate}` : "الرجاء رفع وصل دفع لتجديد الاشتراك"}
-        </p>
-      </div>
     </div>
   );
 }
