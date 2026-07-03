@@ -288,21 +288,37 @@ router.post("/driver/:driverId/docs", async (req, res): Promise<void> => {
     .returning();
 
   // ── Set account to pending + grant 3-day trial (first submission only) ──
-  const threeHoursMs = 3 * 24 * 60 * 60 * 1000;
-  const trialExpiry  = new Date(now.getTime() + threeHoursMs);
-
-  await db
+  // Defense-in-depth: even though this branch is already gated by
+  // `trialAlreadyGranted` (stamped once in driverDetailsTable.trialGrantedAt),
+  // the actual subscriptionExpiresAt write uses the same atomic SQL CASE
+  // guard as the receipt-upload bonus, so it can NEVER reduce an existing
+  // future expiry — regardless of what triggers this route or how the
+  // trialAlreadyGranted gate is computed.
+  const [docsBonusResult] = await db
     .update(usersTable)
     .set({
       accountStatus: "pending",
-      // Only grant the 3-day trial window once; re-submissions keep existing expiry
-      ...(!trialAlreadyGranted ? { subscriptionExpiresAt: trialExpiry } : {}),
+      ...(!trialAlreadyGranted
+        ? {
+            subscriptionExpiresAt: sql`CASE
+              WHEN "subscription_expires_at" IS NULL
+                OR "subscription_expires_at" < NOW() + INTERVAL '3 days'
+              THEN NOW() + INTERVAL '3 days'
+              ELSE "subscription_expires_at"
+            END`,
+          }
+        : {}),
     })
-    .where(eq(usersTable.id, driverId));
+    .where(eq(usersTable.id, driverId))
+    .returning({ subscriptionExpiresAt: usersTable.subscriptionExpiresAt });
 
   req.log.info(
-    { driverId, trialAlreadyGranted, trialExpiry: trialAlreadyGranted ? "unchanged" : trialExpiry },
-    "Driver docs submitted — account pending, trial window applied"
+    {
+      driverId,
+      trialAlreadyGranted,
+      subscriptionExpiresAt: docsBonusResult?.subscriptionExpiresAt?.toISOString() ?? null,
+    },
+    "Driver docs submitted — account pending, trial window applied (CASE-guarded)"
   );
 
   res.json({
