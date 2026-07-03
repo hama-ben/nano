@@ -1,0 +1,37 @@
+I'm getting a "Failed to fetch" error when trying to log in on the driver app (nano/Mizu).
+This is a raw browser network error (TypeError: Failed to fetch) that occurs BEFORE any
+response comes back from the server — meaning the request never reached the backend at all.
+This is NOT a wrong-credentials error.
+
+DIAGNOSE FIRST, DO NOT FIX ANYTHING YET:
+
+STEP 1 — DIAGNOSIS
+1. Confirm the artifacts/api-server workflow/server is actually running right now
+   (not stopped or crashed). Show me the last lines of the Console/Workflow logs.
+2. Look for any error or crash near the time of the failed login attempt
+   (e.g. unhandled exception, ECONNREFUSED, port already in use,
+   a Supabase connection error at server startup).
+3. Test directly (bypassing the UI) via curl or fetch from the shell:
+   does /api/health or /api/auth/login respond at all on the same origin?
+   Report back the exact status code and body.
+4. Check the value of VITE_API_BASE_URL in the environment variables: is it empty
+   (same-origin) or does it point to a different Repl/URL? If it points to a
+   separate Repl, confirm that Repl is actually running and not asleep
+   (Replit dev preview URLs sleep when inactive).
+5. Check whether the frontend and backend run in the same workflow
+   (router = "application") or are split into two separate services — if split,
+   this could explain why one works and the other doesn't.
+6. Check the server's CORS configuration: does it allow the current origin
+   (nano--mizu-08.replit.app), especially if this URL changed recently?
+
+Do not change any code before reporting the diagnosis results above and
+identifying the exact root cause.
+
+STEP 2 — FIX
+Apply a fix based ONLY on the confirmed root cause (restart the stopped server,
+correct VITE_API_BASE_URL, fix the CORS config, or fix whatever error is
+crashing the server at startup).
+
+STEP 3 — RETEST
+Actually attempt to log in from the UI after the fix and confirm the error is
+gone. Show me the successful /api/auth/login response.
